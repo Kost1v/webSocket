@@ -1,33 +1,112 @@
-// import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
 function App() {
-  // const [transactions, setTransactions] = useState(null);
-  // const [totalAmount, setTotalAmount] = useState(0);
+  const [transactions, setTransactions] = useState([]);
+  const [totalAmount, setTotalAmount] = useState(0);
+  const [isConect, setIsConect] = useState(false);
+  const socket = useRef(null);
 
-  let socket = new WebSocket("wss://ws.blockchain.info/inv");
+  const connectSocket = () => {
+    socket.current = new WebSocket("wss://ws.blockchain.info/inv");
 
-  socket.onopen = () => {
-    console.log("WebSocket connected");
-    socket.send(
-      JSON.stringify({
-        op: "unconfirmed_sub",
-      })
-    ); // Підписка на нові блоки
+    socket.current.onopen = () => {
+      console.log("WebSocket connected");
+      socket.current.send(JSON.stringify({ op: "unconfirmed_sub" }));
+      setIsConect(true);
+    };
+
+    socket.current.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.op === "utx") {
+        const newTransaction = data.x;
+
+        const transactionAmount =
+          newTransaction.out.reduce((sum, output) => sum + output.value, 0) /1e8;
+
+        setTransactions((prev) => [newTransaction, ...prev.slice(0, 4)]);
+
+        setTotalAmount((prev) => prev + transactionAmount);
+      }
+    };
+
+    socket.current.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    socket.current.onclose = () => {
+      setIsConect(false);
+    };
   };
 
-  socket.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    if (data.op === "block") {
-      console.log("New block:", data.x.hash, "at height", data.x.height);
-    }
+  const disconnectSocket = () => {
+    socket.current.close();
+    setIsConect(false);
+    console.log("WebSocket disconnected");
+    
   };
 
-  socket.onerror = (error) => console.error("WebSocket error:", error);
+  const resetTransactions = () => {
+    setTransactions([]);
+    setTotalAmount(0)
+  }
 
-  socket.onclose = () => console.log("WebSocket closed");
+  useEffect(() => {
+    return () => {
+      socket.current.close();
+    };
+  }, []);
 
-  return <h1>123</h1>;
+
+  return (
+    <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
+      <h1>Transactions</h1>
+      <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+        <button type="button" onClick={connectSocket} disabled={isConect}>
+          Subscribe
+        </button>
+        <button type="button" onClick={disconnectSocket} disabled={!isConect}>
+          Unsubscribe
+        </button>
+        <button type="button" onClick={resetTransactions}>
+          Reset Transactions
+        </button>
+      </div>
+      <p>
+        <strong>Total Amount:</strong> {totalAmount.toFixed(8)} BTC
+      </p>
+
+      <ul
+        style={{
+          maxHeight: "400px",
+          overflowY: "scroll",
+          padding: "0",
+          listStyle: "none",
+        }}
+      >
+        {transactions !== null &&
+          transactions.map((tx) => (
+            <li
+              key={tx.hash}
+              style={{
+                marginBottom: "10px",
+                padding: "10px",
+                border: "1px solid #ccc",
+                borderRadius: "5px",
+              }}
+            >
+              <p>
+                <strong>Hash:</strong> {tx.hash}
+              </p>
+              {/* <p>
+                <strong>Amount:</strong> {totalAmount.toFixed(8)}
+                BTC
+              </p> */}
+            </li>
+          ))}
+      </ul>
+    </div>
+  );
 }
 
 export default App;
